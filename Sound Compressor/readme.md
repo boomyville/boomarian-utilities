@@ -6,6 +6,12 @@ This Python script uses FFmpeg to compress audio files by increasing their speed
 
 It processes all supported audio files in the current directory and saves the sped-up versions to a subdirectory named `compressed_audio`.
 
+## Rationale
+
+I made this to help with recording videos for university assignments. Many of my subjects now require code / essay to have a video component included where the submitter provides a narrated slideshow / presentation / screen recording of assignment. The issue is that many of these submissions have a very strict time limit and it can be difficult to fit all your ideas and explanations into such a tight timeframe. My process of creating such videos generally involved me writing a script (much easier for me to read something prepared than try to talk off the cuff - not to mention heavily reduces the amount of retakes when it comes to recording), and then recording myself reading the script (usually in chunks in case I make a mistake). I would then stitch up the audio and have it play back whilst I screen recorded my presentation (whether it was me flicking through the slideshow or me navigating to different sections of code in VS studio). Finally, I would use my video editing software of choice to combine the audio and video clips into one nice package and then inevitably find out that my video is way too long.
+
+By using this python script, I could shorten the duration of audio clips which allowed me to essentially cram more information within a set time frame. Obviously, there are limits to how fast a human can listen but if you need to shave up to 50% off your audio clips, then this is a good place to start. And yes, Audacity exists and can do the same thing but this script is much easier with a dozen audio files.
+
 ## Requirements
 
 **Python:** Python 3.6 or higher.
