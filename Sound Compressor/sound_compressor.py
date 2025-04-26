@@ -3,7 +3,7 @@
 # Author:       Kevin Teong 
 # Description:  Compress audio files by changing speed using FFmpeg.
 # Usage:        python3 sound_compressor.py
-# Version:      1.1
+# Version:      1.2
 # Date:         26/04/2025
 # Requirements: sudo apt install ffmpeg
 # How to use:   Place the script in the same directory as the audio files
@@ -19,7 +19,7 @@ import subprocess
 CONFIG = {
     'SPEED_FACTOR': 1.5,        # Speed multiplier (1.5 = 1.5x speed)
     'OUTPUT_FORMAT': 'ogg',     # Output format: 'ogg', 'mp3', 'wav', 'm4a', etc.
-    'INPUT_EXTENSIONS': ['.m4a', '.mp3', '.wav'],  # Extensions to process
+    'INPUT_EXTENSIONS': ['.m4a', '.mp3', '.wav', '.ogg'],  # Extensions to process
 }
 
 def compress_audio(input_file, output_file, speed_factor=1.5):
@@ -77,6 +77,7 @@ def process_audio_files():
         compress_audio(input_path, output_path, speed_factor)
     
     print(f"Processed {len(audio_files)} files at {speed_factor}x speed to {output_format} format.")
+    print(f"Input formats processed: {', '.join(ext.lstrip('.') for ext in extensions)}")
 
 # Run the script
 if __name__ == "__main__":
