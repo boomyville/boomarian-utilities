@@ -1,28 +1,31 @@
 #==============================================================================
 # Title:        Audio to SRT Subtitle Generator
 # Author:       Kevin Teong
-# Description:  Generates .srt subtitle files from M4A audio files using the Whisper ASR model.
+# Description:  Generates .srt subtitle files from M4A and OGG audio files using the Whisper ASR model.
 # Usage:        python3 subtitle_generator.py
-# Version:      1.0
-# Date:         24/01/2025
+# Version:      1.1
+# Date:         17/05/2025
 #==============================================================================
-
 import os
 import whisper
 from datetime import timedelta
 
 def generate_subtitles(audio_directory):
     """
-    Generate .srt subtitle files for all M4A files in the given directory.
+    Generate .srt subtitle files for all M4A and OGG files in the given directory.
     
-    :param audio_directory: Path to directory containing M4A files
+    :param audio_directory: Path to directory containing audio files
     """
     # Load the Whisper model (can choose different sizes: tiny, base, small, medium, large)
     model = whisper.load_model('base')
     
-    # Iterate through all M4A files in the directory
+    # Supported audio formats
+    supported_formats = ['.m4a', '.ogg']
+    
+    # Iterate through all audio files in the directory
     for filename in os.listdir(audio_directory):
-        if filename.endswith('.m4a'):
+        file_ext = os.path.splitext(filename)[1].lower()
+        if file_ext in supported_formats:
             # Full path to the audio file
             audio_path = os.path.join(audio_directory, filename)
             
