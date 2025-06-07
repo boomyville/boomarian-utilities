@@ -1,6 +1,6 @@
 # MKV to Home Assistant Compatible Format Converter
 
-A Python script that converts MKV files to MP4 format with H.264 encoding, optimized for Home Assistant media management. Features GPU acceleration for faster conversions and intelligent handling of 10-bit video sources.
+A Python script that converts MKV files to MP4 format with H.264 encoding, optimized for Home Assistant media management. Features GPU acceleration for faster conversions and intelligent handling of 10-bit video sources. I made it for converting Bluey episodes for my son...
 
 ## Features
 
