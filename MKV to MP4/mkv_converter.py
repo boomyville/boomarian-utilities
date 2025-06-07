@@ -54,6 +54,22 @@ def get_video_info(input_file):
         logger.error(f"Failed to get video info for {input_file}: {e}")
         return None
 
+def get_video_resolution(input_file):
+    """Get video resolution using ffprobe."""
+    try:
+        cmd = [
+            'ffprobe', '-v', 'quiet', '-select_streams', 'v:0',
+            '-show_entries', 'stream=width,height', '-of', 'csv=p=0', str(input_file)
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        dimensions = result.stdout.strip().split(',')
+        if len(dimensions) == 2:
+            width, height = int(dimensions[0]), int(dimensions[1])
+            return width, height
+        return None, None
+    except (subprocess.CalledProcessError, ValueError):
+        return None, None
+
 def get_video_bit_depth(input_file):
     """Get video bit depth using ffprobe."""
     try:
@@ -72,6 +88,42 @@ def get_video_bit_depth(input_file):
         logger.warning(f"Could not determine bit depth for {input_file}: {e}")
         return False, "unknown"
 
+def get_audio_streams(input_file):
+    """Get information about audio streams in the file."""
+    try:
+        cmd = [
+            'ffprobe', '-v', 'quiet', '-select_streams', 'a',
+            '-show_entries', 'stream=index,codec_name,channels,sample_rate,bit_rate',
+            '-of', 'csv=p=0', str(input_file)
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        streams = result.stdout.strip().split('\n') if result.stdout.strip() else []
+        return [s for s in streams if s]  # Filter out empty strings
+    except subprocess.CalledProcessError:
+        return []
+
+def get_appropriate_h264_level(width, height):
+    """Get appropriate H.264 level based on resolution."""
+    if width is None or height is None:
+        return '4.0'  # Safe default
+    
+    # Calculate total pixels
+    pixels = width * height
+    
+    # H.264 level guidelines
+    if pixels <= 152064:  # 414x368 or smaller
+        return '1.3'
+    elif pixels <= 345600:  # 720x480 or smaller
+        return '3.0'
+    elif pixels <= 921600:  # 1280x720 or smaller
+        return '3.1'
+    elif pixels <= 2073600:  # 1920x1080 or smaller
+        return '4.0'
+    elif pixels <= 8294400:  # 3840x2160 or smaller
+        return '5.1'
+    else:
+        return '5.2'
+
 def convert_mkv_to_mp4(input_file, output_file, encoder='nvenc_h264', quality='medium'):
     """
     Convert MKV file to MP4 with GPU or CPU encoding.
@@ -86,6 +138,18 @@ def convert_mkv_to_mp4(input_file, output_file, encoder='nvenc_h264', quality='m
     # Check if source is 10-bit
     is_10bit, pix_fmt = get_video_bit_depth(input_file)
     
+    # Get video resolution
+    width, height = get_video_resolution(input_file)
+    h264_level = get_appropriate_h264_level(width, height)
+    
+    logger.info(f"Video resolution: {width}x{height}, using H.264 level {h264_level}")
+    
+    # Get audio stream info
+    audio_streams = get_audio_streams(input_file)
+    logger.info(f"Found {len(audio_streams)} audio streams in {input_file.name}")
+    if audio_streams:
+        logger.info(f"Audio streams: {audio_streams}")
+    
     # Base ffmpeg command
     cmd = ['ffmpeg', '-i', str(input_file)]
     
@@ -95,13 +159,17 @@ def convert_mkv_to_mp4(input_file, output_file, encoder='nvenc_h264', quality='m
             # Convert 10-bit to 8-bit for NVENC compatibility
             cmd.extend([
                 '-c:v', 'h264_nvenc',
-                '-pix_fmt', 'yuv420p',    # Force 8-bit output
+                '-profile:v', 'high',         # Use high profile for better compression
+                '-level', h264_level,         # Dynamic level based on resolution
+                '-pix_fmt', 'yuv420p',        # Force 8-bit output
                 '-preset', 'p4',
                 '-tune', 'hq',
             ])
         else:
             cmd.extend([
                 '-c:v', 'h264_nvenc',
+                '-profile:v', 'high',         # Use high profile for better compression
+                '-level', h264_level,         # Dynamic level based on resolution
                 '-preset', 'p4',
                 '-tune', 'hq',
             ])
@@ -134,6 +202,8 @@ def convert_mkv_to_mp4(input_file, output_file, encoder='nvenc_h264', quality='m
     else:  # CPU encoding
         cmd.extend([
             '-c:v', 'libx264',
+            '-profile:v', 'high',         # Use high profile for better compression
+            '-level', h264_level,         # Dynamic level based on resolution
         ])
         
         if is_10bit:
@@ -150,20 +220,31 @@ def convert_mkv_to_mp4(input_file, output_file, encoder='nvenc_h264', quality='m
     # Add quality settings
     cmd.extend(quality_settings.get(quality, quality_settings['medium']))
     
-    # Audio and container settings
+    # Improved audio settings for better compatibility
     cmd.extend([
-        '-c:a', 'aac',               # Audio codec
-        '-b:a', '128k',              # Audio bitrate
+        '-c:a', 'aac',               # Audio codec (widely compatible)
+        '-b:a', '192k',              # Higher bitrate for better quality
+        '-ac', '2',                  # Force stereo output for compatibility
+        '-ar', '48000',              # Standard sample rate
         '-movflags', '+faststart',   # Optimize for streaming
         '-map', '0:v:0',             # Map first video stream
-        '-map', '0:a:0',             # Map first audio stream  
-        '-y',                        # Overwrite output file
-        str(output_file)
     ])
+    
+    # Map audio streams more intelligently
+    if audio_streams:
+        cmd.extend(['-map', '0:a:0'])  # Map first audio stream
+        logger.info("Mapping first audio stream")
+    else:
+        logger.warning(f"No audio streams found in {input_file.name}")
+        # Still add audio mapping in case ffprobe missed it
+        cmd.extend(['-map', '0:a?'])  # Optional audio mapping
+    
+    cmd.extend(['-y', str(output_file)])  # Overwrite output file
     
     try:
         bit_info = f" (10-bit source)" if is_10bit else " (8-bit source)"
-        logger.info(f"Converting {input_file.name} to {output_file.name}{bit_info}")
+        audio_info = f" with {len(audio_streams)} audio streams" if audio_streams else " (no audio detected)"
+        logger.info(f"Converting {input_file.name} to {output_file.name}{bit_info}{audio_info}")
         logger.info(f"Using {encoder.upper()} encoder with {quality} quality")
         logger.info(f"Command: {' '.join(cmd)}")
         
@@ -176,12 +257,32 @@ def convert_mkv_to_mp4(input_file, output_file, encoder='nvenc_h264', quality='m
                 check=True
             )
             logger.info(f"Successfully converted {input_file.name}")
+            
+            # Verify audio in output file
+            output_audio_streams = get_audio_streams(output_file)
+            if output_audio_streams:
+                logger.info(f"Output file has {len(output_audio_streams)} audio streams")
+            else:
+                logger.warning(f"Output file may not have audio streams!")
+            
             return True
             
         except subprocess.CalledProcessError as nvenc_error:
-            if encoder.startswith('nvenc') and ('10 bit encode not supported' in str(nvenc_error.stderr) or 'No capable devices found' in str(nvenc_error.stderr)):
+            error_msg = str(nvenc_error.stderr) if nvenc_error.stderr else str(nvenc_error)
+            
+            # Check for various NVENC failure conditions
+            nvenc_failures = [
+                '10 bit encode not supported',
+                'No capable devices found',
+                'InitializeEncoder failed',
+                'invalid param',
+                'Cannot load nvcuda.dll',
+                'NVENC not available'
+            ]
+            
+            if encoder.startswith('nvenc') and any(fail in error_msg for fail in nvenc_failures):
                 logger.warning(f"NVENC failed for {input_file.name}, falling back to CPU encoding")
-                logger.warning(f"NVENC Error: {nvenc_error.stderr}")
+                logger.warning(f"NVENC Error: {error_msg}")
                 
                 # Fallback to CPU encoding
                 return convert_mkv_to_mp4(input_file, output_file, 'cpu', quality)
@@ -220,7 +321,8 @@ def get_user_preferences():
     """Get user preferences for conversion settings."""
     print("\n=== MKV to MP4 Converter for Home Assistant ===")
     print("This script will convert MKV files to MP4 format in the same directory.")
-    print("Converted files will be renamed with '_converted' suffix.\n")
+    print("Converted files will be renamed with '_converted' suffix.")
+    print("Audio will be converted to AAC stereo at 192kbps for maximum compatibility.\n")
     
     # Check GPU encoding availability
     nvenc_available, av1_nvenc_available = check_gpu_encoding()
@@ -351,6 +453,7 @@ def main():
     
     logger.info(f"Found {len(mkv_files)} MKV files to convert")
     logger.info(f"Encoder: {encoder.upper()}, Quality: {quality}, Suffix: {suffix}, Delete originals: {delete_original}")
+    logger.info("Audio will be converted to AAC stereo at 192kbps for maximum compatibility")
     
     if not args.batch:
         proceed = input(f"\nProceed with conversion? (y/n) [default: y]: ").strip().lower()
