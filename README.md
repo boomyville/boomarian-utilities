@@ -1,5 +1,5 @@
-# The Boomarian Study Utilities
-A collection of utilities built by me to help with University studies
+# The Boomarian Utilities
+A collection of utilities built by me to help with University studies and general computing (such as file conversion)
 
 
 ## Sound compressor
@@ -10,3 +10,6 @@ This Python script compresses audio files by increasing their speed using FFmpeg
 
 This Python script creates .srt subtitle files from .m4a audio using the Whisper ASR model. It processes all .m4a files in the script's directory. Requires Python 3.6+ and openai-whisper (pip install -U openai-whisper). To use, save the script, place .m4a files in its directory, run python3 subtitle_generator.py, and find .srt files in the same location. Customise the Whisper model for transcription accuracy by modifying model = whisper.load_model('base') to smaller or larger models. Use your favourite video editor (such as ShotCut) to embed or attached .srt files to your videos.
 
+## MKV to MP4
+
+This Python script uses CPU or GPU to convert MKV files to H254 MPEG files. Mainly used to allow for playing on browser / home assistant.
