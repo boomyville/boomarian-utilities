@@ -1,0 +1,355 @@
+
+name: Build Pixel Snapper (Windows GUI + CLI)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add GUI dependencies and generate GUI source
+        shell: pwsh
+        run: |
+          Add-Content Cargo.toml @'
+
+          [dependencies.eframe]
+          version = "0.31"
+          default-features = false
+          features = ["default_fonts", "glow"]
+
+          [dependencies.rfd]
+          version = "0.15"
+
+          [[bin]]
+          name = "pixel-snapper-gui"
+          path = "src/bin/gui.rs"
+          '@
+
+          New-Item -ItemType Directory -Force src/bin | Out-Null
+
+          @'
+          use eframe::egui;
+          use egui::TextureHandle;
+          use std::path::PathBuf;
+
+          struct App {
+              input: Option<Vec<u8>>,
+              output: Option<Vec<u8>>,
+              input_texture: Option<TextureHandle>,
+              output_texture: Option<TextureHandle>,
+              colors: usize,
+              pixel_size: usize,
+              override_size: bool,
+              palette: String,
+              status: String,
+          }
+
+          impl Default for App {
+              fn default() -> Self {
+                  Self {
+                      input: None,
+                      output: None,
+                      input_texture: None,
+                      output_texture: None,
+                      colors: 16,
+                      pixel_size: 8,
+                      override_size: false,
+                      palette: String::new(),
+                      status: "Open an image to begin.".into(),
+                  }
+              }
+          }
+
+          impl App {
+              fn texture(
+                  ctx: &egui::Context,
+                  name: &str,
+                  bytes: &[u8],
+              ) -> Result<TextureHandle, String> {
+                  let image = image::load_from_memory(bytes)
+                      .map_err(|e| e.to_string())?
+                      .to_rgba8();
+
+                  let size = [image.width() as usize, image.height() as usize];
+
+                  let color = egui::ColorImage::from_rgba_unmultiplied(
+                      size,
+                      image.as_raw(),
+                  );
+
+                  Ok(ctx.load_texture(
+                      name,
+                      color,
+                      egui::TextureOptions::NEAREST,
+                  ))
+              }
+
+              fn open(&mut self, ctx: &egui::Context) {
+                  if let Some(path) = rfd::FileDialog::new()
+                      .add_filter("Images", &["png", "jpg", "jpeg"])
+                      .pick_file()
+                  {
+                      match std::fs::read(path) {
+                          Ok(bytes) => {
+                              match Self::texture(ctx, "input", &bytes) {
+                                  Ok(texture) => {
+                                      self.input = Some(bytes);
+                                      self.input_texture = Some(texture);
+                                      self.output = None;
+                                      self.output_texture = None;
+                                      self.status = "Image loaded.".into();
+                                  }
+                                  Err(e) => self.status = e,
+                              }
+                          }
+                          Err(e) => self.status = e.to_string(),
+                      }
+                  }
+              }
+
+              fn process(&mut self, ctx: &egui::Context) {
+                  let Some(input) = &self.input else {
+                      self.status = "Open an image first.".into();
+                      return;
+                  };
+
+                  let pixel_size = if self.override_size {
+                      Some(self.pixel_size as f64)
+                  } else {
+                      None
+                  };
+
+                  let palette = if self.palette.trim().is_empty() {
+                      None
+                  } else {
+                      Some(self.palette.trim())
+                  };
+
+                  match spritefusion_pixel_snapper::process_image_bytes(
+                      input,
+                      self.colors,
+                      pixel_size,
+                      palette,
+                  ) {
+                      Ok(bytes) => match Self::texture(ctx, "output", &bytes) {
+                          Ok(texture) => {
+                              self.output = Some(bytes);
+                              self.output_texture = Some(texture);
+                              self.status = "Processing complete.".into();
+                          }
+                          Err(e) => self.status = e,
+                      },
+                      Err(e) => self.status = e.to_string(),
+                  }
+              }
+
+              fn preview(ui: &mut egui::Ui, texture: Option<&TextureHandle>) {
+                  if let Some(texture) = texture {
+                      let size = texture.size_vec2();
+                      let available = ui.available_size();
+
+                      let scale = (available.x / size.x)
+                          .min(available.y / size.y)
+                          .min(1.0)
+                          .max(0.01);
+
+                      ui.centered_and_justified(|ui| {
+                          ui.image((texture.id(), size * scale));
+                      });
+                  } else {
+                      ui.centered_and_justified(|ui| {
+                          ui.label("No image loaded");
+                      });
+                  }
+              }
+          }
+
+          impl eframe::App for App {
+              fn update(
+                  &mut self,
+                  ctx: &egui::Context,
+                  _frame: &mut eframe::Frame,
+              ) {
+                  egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
+                      ui.horizontal(|ui| {
+                          ui.heading("Sprite Fusion Pixel Snapper");
+
+                          if ui.button("Open Image").clicked() {
+                              self.open(ctx);
+                          }
+
+                          if ui.button("Process").clicked() {
+                              self.process(ctx);
+                          }
+
+                          if ui.add_enabled(
+                              self.output.is_some(),
+                              egui::Button::new("Save Output"),
+                          ).clicked() {
+                              if let Some(path) = rfd::FileDialog::new()
+                                  .add_filter("PNG", &["png"])
+                                  .set_file_name("pixel-snapper-output.png")
+                                  .save_file()
+                              {
+                                  if let Some(bytes) = &self.output {
+                                      match std::fs::write(path, bytes) {
+                                          Ok(()) => self.status = "Saved.".into(),
+                                          Err(e) => self.status = e.to_string(),
+                                      }
+                                  }
+                              }
+                          }
+                      });
+                  });
+
+                  egui::SidePanel::left("settings")
+                      .default_width(230.0)
+                      .show(ctx, |ui| {
+                          ui.heading("Settings");
+                          ui.separator();
+
+                          ui.label(format!("Colours: {}", self.colors));
+                          ui.add(
+                              egui::Slider::new(&mut self.colors, 1..=256)
+                                  .text("Colours"),
+                          );
+
+                          ui.separator();
+
+                          ui.checkbox(
+                              &mut self.override_size,
+                              "Override pixel size",
+                          );
+
+                          ui.add_enabled_ui(self.override_size, |ui| {
+                              ui.label(format!("Pixel size: {} px", self.pixel_size));
+                              ui.add(
+                                  egui::Slider::new(&mut self.pixel_size, 1..=64)
+                                      .text("Pixels"),
+                              );
+                          });
+
+                          ui.separator();
+                          ui.label("Custom palette (optional)");
+                          ui.text_edit_singleline(&mut self.palette);
+                          ui.small("Example: 0d2b45,203c56,ffecd6");
+
+                          ui.separator();
+                          ui.label(&self.status);
+
+                          if ui.button("Process Image").clicked() {
+                              self.process(ctx);
+                          }
+                      });
+
+                  egui::CentralPanel::default().show(ctx, |ui| {
+                      ui.columns(2, |columns| {
+                          columns[0].heading("Input");
+                          Self::preview(
+                              &mut columns[0],
+                              self.input_texture.as_ref(),
+                          );
+
+                          columns[1].heading("Output");
+                          Self::preview(
+                              &mut columns[1],
+                              self.output_texture.as_ref(),
+                          );
+                      });
+                  });
+              }
+          }
+
+          fn main() -> eframe::Result<()> {
+              let options = eframe::NativeOptions {
+                  viewport: egui::ViewportBuilder::default()
+                      .with_inner_size([1100.0, 750.0])
+                      .with_min_inner_size([750.0, 500.0]),
+                  ..Default::default()
+              };
+
+              eframe::run_native(
+                  "Sprite Fusion Pixel Snapper",
+                  options,
+                  Box::new(|_| Ok(Box::new(App::default()))),
+              )
+          }
+          '@ | Set-Content src/bin/gui.rs
+
+      - name: Add shared image processing API
+        shell: pwsh
+        run: |
+          $lib = Get-Content src/lib.rs -Raw
+
+          if ($lib -notmatch 'pub fn process_image_bytes') {
+            $function = @'
+
+          #[cfg(not(target_arch = "wasm32"))]
+          pub fn process_image_bytes(
+              input_bytes: &[u8],
+              k_colors: usize,
+              pixel_size_override: Option<f64>,
+              palette_hex: Option<&str>,
+          ) -> Result<Vec<u8>> {
+              if k_colors == 0 || k_colors > MAX_PALETTE_COLORS {
+                  return Err(PixelSnapperError::InvalidInput(
+                      "Color count must be between 1 and 256".to_string(),
+                  ));
+              }
+
+              let mut config = Config::default();
+              config.k_colors = k_colors;
+              config.pixel_size_override = pixel_size_override;
+              config.palette = palette_hex
+                  .map(parse_palette_hex)
+                  .transpose()?;
+
+              process_image_common(input_bytes, Some(config))
+                  .map(|processed| processed.output_bytes)
+          }
+          '@
+
+            Add-Content src/lib.rs $function
+          }
+
+      - name: Build CLI and GUI
+        run: cargo build --release --bins
+
+      - name: Package executables
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target/release/spritefusion-pixel-snapper.exe dist/
+          Copy-Item target/release/pixel-snapper-gui.exe dist/
+          Compress-Archive -Path dist/*.exe -DestinationPath pixel-snapper-windows-x64.zip
+
+      - name: Upload Windows downloads
+        uses: actions/upload-artifact@v4
+        with:
+          name: pixel-snapper-windows-x64
+          path: |
+            dist/*.exe
+            pixel-snapper-windows-x64.zip
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/*.exe
+            pixel-snapper-windows-x64.zip
