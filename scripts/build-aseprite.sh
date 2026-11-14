@@ -15,9 +15,10 @@ for tool in cmake ninja curl unzip; do
 done
 
 echo "Resolving the Skia package required by this Aseprite source revision..."
-skia_url="$(source laf/misc/skia-url.sh | xargs)"
+skia_url="$(bash laf/misc/skia-url.sh Release | xargs)"
+
 if [[ -z "$skia_url" ]]; then
-  echo "Could not determine the Skia download URL from laf/misc/skia-url.sh." >&2
+  echo "Could not determine the Skia download URL." >&2
   exit 1
 fi
 
