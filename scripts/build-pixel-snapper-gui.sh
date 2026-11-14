@@ -6,25 +6,62 @@ test -f Cargo.toml || { echo "Cargo.toml not found; run from the Pixel Snapper r
 test -f src/lib.rs || { echo "src/lib.rs not found; refusing to create a replacement library." >&2; exit 1; }
 
 python3 <<'PY'
+
 from pathlib import Path
+import re
 
 cargo = Path("Cargo.toml")
-text = cargo.read_text()
-if "[dependencies]" not in text:
+text = cargo.read_text(encoding="utf-8")
+
+match = re.search(r"(?m)^\[dependencies\]\s*$", text)
+if not match:
     raise SystemExit("Cargo.toml has no [dependencies] section.")
 
-for dep in [
-    'eframe = { version = "0.29", default-features = true }',
-    'rfd = "0.15"',
-]:
-    name = dep.split(" =", 1)[0]
-    if not any(line.strip().startswith(name + " =") for line in text.splitlines()):
-        marker = "[dependencies]"
-        pos = text.index(marker) + len(marker)
-        text = text[:pos] + "\\n" + dep + text[pos:]
+required = [
+    ("eframe", 'eframe = { version = "0.29", default-features = true }'),
+    ("rfd", 'rfd = "0.15"'),
+]
+
+missing = [
+    line for name, line in required
+    if not re.search(rf"(?m)^\s*{re.escape(name)}\s*=", text)
+]
+
+if missing:
+    insert_at = match.end()
+    text = text[:insert_at] + "\n" + "\n".join(missing) + text[insert_at:]
 
 if 'name = "pixel-snapper-gui"' not in text:
     text += '''
+
+[[bin]]
+name = "pixel-snapper-gui"
+path = "src/bin/pixel_snapper_gui.rs"
+'''
+
+cargo.write_text(text, encoding="utf-8")
+
+lib = Path("src/lib.rs")
+lib_text = lib.read_text(encoding="utf-8")
+
+if "pub fn process_image_bytes_for_gui" not in lib_text:
+    lib_text += r'''
+
+// Native GUI entry point. This reuses the crate's existing processing pipeline.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn process_image_bytes_for_gui(
+    input_bytes: &[u8],
+    k_colors: usize,
+    pixel_size_override: Option<u32>,
+) -> Result<Vec<u8>> {
+    let mut config = Config::default();
+    config.k_colors = k_colors;
+    config.pixel_size_override = pixel_size_override;
+    let processed = process_image_common(input_bytes, Some(config))?;
+    Ok(processed.output_bytes)
+}
+'''
+    lib.write_text(lib_text, encoding="utf-8")
 
 [[bin]]
 name = "pixel-snapper-gui"
