@@ -45,7 +45,7 @@ lib = Path("src/lib.rs")
 lib_text = lib.read_text(encoding="utf-8")
 
 if "pub fn process_image_bytes_for_gui" not in lib_text:
-    lib_text += r'''
+    lib_text += r"""
 
 // Native GUI entry point. This reuses the crate's existing processing pipeline.
 #[cfg(not(target_arch = "wasm32"))]
@@ -60,7 +60,7 @@ pub fn process_image_bytes_for_gui(
     let processed = process_image_common(input_bytes, Some(config))?;
     Ok(processed.output_bytes)
 }
-'''
+"""
     lib.write_text(lib_text, encoding="utf-8")
 
 [[bin]]
