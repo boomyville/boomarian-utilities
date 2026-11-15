@@ -6,7 +6,6 @@ test -f Cargo.toml || { echo "Cargo.toml not found; run from the Pixel Snapper r
 test -f src/lib.rs || { echo "src/lib.rs not found; refusing to create a replacement library." >&2; exit 1; }
 
 python3 <<'PY'
-
 from pathlib import Path
 import re
 
@@ -62,33 +61,6 @@ pub fn process_image_bytes_for_gui(
 }
 """
     lib.write_text(lib_text, encoding="utf-8")
-
-[[bin]]
-name = "pixel-snapper-gui"
-path = "src/bin/pixel_snapper_gui.rs"
-'''
-cargo.write_text(text)
-
-lib = Path("src/lib.rs")
-lib_text = lib.read_text()
-if "pub fn process_image_bytes_for_gui" not in lib_text:
-    lib_text += r'''
-
-// Native GUI entry point. This reuses the crate's existing processing pipeline.
-#[cfg(not(target_arch = "wasm32"))]
-pub fn process_image_bytes_for_gui(
-    input_bytes: &[u8],
-    k_colors: usize,
-    pixel_size_override: Option<u32>,
-) -> Result<Vec<u8>> {
-    let mut config = Config::default();
-    config.k_colors = k_colors;
-    config.pixel_size_override = pixel_size_override;
-    let processed = process_image_common(input_bytes, Some(config))?;
-    Ok(processed.output_bytes)
-}
-'''
-    lib.write_text(lib_text)
 PY
 
 mkdir -p src/bin
@@ -125,9 +97,11 @@ impl Default for PixelSnapperApp {
 }
 
 impl PixelSnapperApp {
-    fn texture_from_bytes(ctx: &egui::Context, bytes: &[u8], name: &str)
-        -> Result<egui::TextureHandle, String>
-    {
+    fn texture_from_bytes(
+        ctx: &egui::Context,
+        bytes: &[u8],
+        name: &str,
+    ) -> Result<egui::TextureHandle, String> {
         let decoded = image::load_from_memory(bytes)
             .map_err(|e| format!("Could not decode image: {e}"))?
             .to_rgba8();
@@ -165,7 +139,9 @@ impl PixelSnapperApp {
         };
         let override_size = self.use_pixel_size.then_some(self.pixel_size);
         match spritefusion_pixel_snapper::process_image_bytes_for_gui(
-            bytes, self.k_colors, override_size
+            bytes,
+            self.k_colors,
+            override_size,
         ) {
             Ok(output) => match Self::texture_from_bytes(ctx, &output, "output") {
                 Ok(texture) => {
@@ -201,9 +177,15 @@ impl eframe::App for PixelSnapperApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::TopBottomPanel::top("controls").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                if ui.button("Open image").clicked() { self.open_image(ctx); }
-                if ui.button("Process").clicked() { self.process(ctx); }
-                if ui.button("Save output").clicked() { self.save_output(); }
+                if ui.button("Open image").clicked() {
+                    self.open_image(ctx);
+                }
+                if ui.button("Process").clicked() {
+                    self.process(ctx);
+                }
+                if ui.button("Save output").clicked() {
+                    self.save_output();
+                }
             });
             ui.horizontal(|ui| {
                 ui.label("Colours");
@@ -220,13 +202,13 @@ impl eframe::App for PixelSnapperApp {
             ui.columns(2, |columns| {
                 columns[0].heading("Input");
                 if let Some(texture) = &self.input_texture {
-                    columns[0].image(texture);
+                    columns[0].add(egui::Image::new(texture).shrink_to_fit());
                 } else {
                     columns[0].label("No input image");
                 }
                 columns[1].heading("Output");
                 if let Some(texture) = &self.output_texture {
-                    columns[1].image(texture);
+                    columns[1].add(egui::Image::new(texture).shrink_to_fit());
                 } else {
                     columns[1].label("Process an image to preview the result");
                 }
