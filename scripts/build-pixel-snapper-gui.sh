@@ -51,7 +51,7 @@ if "pub fn process_image_bytes_for_gui" not in lib_text:
 pub fn process_image_bytes_for_gui(
     input_bytes: &[u8],
     k_colors: usize,
-    pixel_size_override: Option<u32>,
+    pixel_size_override: Option<f64>,
 ) -> Result<Vec<u8>> {
     let mut config = Config::default();
     config.k_colors = k_colors;
@@ -75,7 +75,7 @@ struct PixelSnapperApp {
     output_texture: Option<egui::TextureHandle>,
     output_bytes: Option<Vec<u8>>,
     k_colors: usize,
-    pixel_size: u32,
+    pixel_size: f64,
     use_pixel_size: bool,
     status: String,
 }
@@ -89,7 +89,7 @@ impl Default for PixelSnapperApp {
             output_texture: None,
             output_bytes: None,
             k_colors: 16,
-            pixel_size: 8,
+            pixel_size: 8.0,
             use_pixel_size: false,
             status: "Choose a PNG or JPEG image to begin.".to_owned(),
         }
@@ -192,7 +192,7 @@ impl eframe::App for PixelSnapperApp {
                 ui.add(egui::Slider::new(&mut self.k_colors, 2..=256));
                 ui.checkbox(&mut self.use_pixel_size, "Override pixel size");
                 if self.use_pixel_size {
-                    ui.add(egui::Slider::new(&mut self.pixel_size, 1..=64));
+                    ui.add(egui::Slider::new(&mut self.pixel_size, 1.0..=64.0).step_by(0.5));
                 }
             });
             ui.label(&self.status);
